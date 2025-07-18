@@ -1,0 +1,305 @@
+name: Wex JSON Upload
+
+on:
+  push:
+    branches:
+      - wex
+  workflow_dispatch:
+  schedule:
+    - cron: '*/50 * * * *'
+
+env:
+  ORIGINAL_JSON: "9280.json"
+  FINAL_JSON: "wex.json"
+  SWITCH_DOUBAN: ${{ secrets.SWITCH_DOUBAN }}
+  #推荐链接
+  DOUBAN_ext: ${{ secrets.DOUBAN_ext }}
+  #需要删除的
+  key_DELETE: ${{ secrets.key_DELETE }}
+  #凯速路径
+  KSTORE_ID: ${{ secrets.KSTORE_ID }}
+  #凯速密钥
+  KSTORE_TOKEN: ${{ secrets.KSTORE_TOKEN }}
+  # 从环境变量获取Emby数量配置
+  EMBY_COUNT: ${{ secrets.EMBY_COUNT }}  
+
+jobs:
+  modify:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get install -y jq curl
+
+      - name: 清理历史记录
+        run: |
+          set -euo pipefail
+          RUNS=$(curl -sLf --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100" || true)
+          OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
+          [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
+
+      - name: 下载原始JSON数据
+        run: |
+          set -euxo pipefail
+          curl -fsSL --retry 1 -o ${{ env.ORIGINAL_JSON }} "https://9280.kstore.space/wex.json"
+          jq empty ${{ env.ORIGINAL_JSON }}
+
+      - name: 提取Spider内容
+        if: github.event_name != 'workflow_dispatch'
+        id: spider
+        run: |
+          set -euxo pipefail
+          SPIDER_CONTENT=$(jq -e -r '.spider // "" | gsub("\n"; "\\n")' ${{ env.ORIGINAL_JSON }})
+          echo "SPIDER_CONTENT=$SPIDER_CONTENT" >> $GITHUB_ENV
+
+      - name: 获取历史Spider
+        if: github.event_name != 'workflow_dispatch'
+        id: history
+        run: |
+          set -euxo pipefail
+          RESP=$(curl -sfL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" || true)
+          
+          PREVIOUS_SPIDER=$(jq -r '
+            if .message == "Not Found" then
+              "no_history"
+            else
+              (.body | split("Spider内容: ")[1] // "")
+            end' <<< "$RESP")
+
+          echo "PREVIOUS_SPIDER=$PREVIOUS_SPIDER" >> $GITHUB_ENV
+
+      - name: 内容对比
+        id: comparator
+        run: |
+          set -euxo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            if [[ "$SPIDER_CONTENT" != "$PREVIOUS_SPIDER" ]]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: 处理JSON数据
+        if: steps.comparator.outputs.changed == 'true'
+        run: |
+          set -euxo pipefail
+          python3 <<EOF
+          import json
+          import os
+          from datetime import datetime, timezone, timedelta
+
+          INPUT_FILE = "${{ env.ORIGINAL_JSON }}"
+          OUTPUT_FILE = "${{ env.FINAL_JSON }}"
+
+          # 解析EMBY_COUNT：无配置/非数字视为0
+          emby_count_str = os.environ.get("EMBY_COUNT", "")
+          try:
+              emby_count = int(emby_count_str) if emby_count_str else 0
+          except ValueError:
+              print("⚠️ EMBY_COUNT不是有效数字，视为0（不修改Emby配置）")
+              emby_count = 0
+
+          # 定义是否需要替换原始Emby（≥2时替换）
+          replace_original_emby = emby_count >= 2
+
+          NAME_MAPPING = {
+              "Douban": "🐮【推荐】🐮",
+              "Wexokconfig": "🐮配置中心🐮",
+              "Wexnullname": "💓观影┃4K💓",
+              "push_agent": "推送"
+          }
+
+          PRIORITY_MAP = {
+              "Douban": 1,
+              "Wexokconfig": 2,
+              "玩偶": 3
+          }
+
+          key_delete = json.loads(os.environ.get("key_DELETE", "[]"))
+          switch_douban = os.environ.get("SWITCH_DOUBAN", "false").lower() == "true"
+          douban_ext = os.environ.get("DOUBAN_ext", "")
+          event_type = os.environ.get("EVENT_TYPE", "")
+
+          special_mods = {}
+          if switch_douban and douban_ext:
+              special_mods["Douban"] = {
+                  "name": NAME_MAPPING.get("Douban", "Douban"),
+                  "ext": douban_ext
+              }
+
+          try:
+              with open(INPUT_FILE, "r", encoding="utf-8") as f:
+                  data = json.load(f)
+
+              # 处理proxy规则
+              if "rules" in data:
+                  for rule in data["rules"]:
+                      if rule.get("name") == "proxy" and "hosts" in rule:
+                          if "hdhive.online" not in rule["hosts"]:
+                              rule["hosts"].append("hdhive.online")
+                              print("✅ 已添加 hdhive.online 到proxy规则的hosts中")
+                      elif rule.get("name") == "proxy" and "pattern" in rule:
+                          if not any("hdhive.online" in p for p in rule["pattern"]):
+                              rule["pattern"].append("hdhive.online")
+                              print("✅ 已添加 hdhive.online 到proxy规则的pattern中")
+
+              # 移除冗余字段
+              data.pop("doh", None)
+              data.pop("lives", None)
+
+              sites = data.get("sites", [])
+              processed_sites = []
+              push_agent = None
+              wexconfig = None
+              original_emby_index = -1  # 记录原始Emby（Wexemby）的位置索引
+
+              # 第一次遍历：收集除原始Emby外的配置，记录原始Emby的位置
+              for idx, site in enumerate(sites):
+                  key = site.get("key")
+                  if key == "Wexemby":
+                      original_emby_index = idx  # 记录原始Emby的位置
+                      print(f"🔍 发现原始Emby配置（位置：{idx}），待处理")
+                      continue  # 暂不添加到processed_sites
+                  processed_sites.append(site)
+
+              # 第二次处理：根据条件替换或保留原始Emby
+              if not replace_original_emby:
+                  # 情况1：EMBY_COUNT<2 → 保留原始Emby，插入到原位置
+                  if original_emby_index != -1:
+                      # 找到原始位置并插入
+                      original_emby = sites[original_emby_index]
+                      processed_sites.insert(original_emby_index, original_emby)
+                      print(f"✅ 保留原始Emby配置（位置：{original_emby_index}）")
+              else:
+                  # 情况2：EMBY_COUNT≥2 → 不保留原始Emby，在原位置插入新配置
+                  if original_emby_index != -1:
+                      print(f"📌 在原始Emby位置（{original_emby_index}）添加{emby_count}个新配置")
+                      # 生成新Emby配置并插入原位置
+                      new_embys = []
+                      for i in range(1, emby_count + 1):
+                          new_emby = {
+                              "key": f"Wexdiyemby{str(i).zfill(3)}",
+                              "name": f"🀄️emby{i}┃4K🀄️",
+                              "type": 3,
+                              "api": "csp_WexdiyembyGuard",
+                              "searchable": 1,
+                              "changeable": 1,
+                              "ext": {
+                                  "embynumber": i
+                              }
+                          }
+                          new_embys.append(new_emby)
+                          print(f"✅ 生成新Emby配置: {new_emby['key']}")
+                      # 插入原位置（多个新配置按顺序插入）
+                      for i, emb in enumerate(reversed(new_embys)):
+                          processed_sites.insert(original_emby_index, emb)
+                  else:
+                      print("⚠️ 未找到原始Emby配置（Wexemby），直接添加新配置到末尾")
+                      # 若原始Emby不存在，直接添加到末尾
+                      for i in range(1, emby_count + 1):
+                          new_emby = {
+                              "key": f"Wexdiyemby{str(i).zfill(3)}",
+                              "name": f"🀄️emby{i}┃4K🀄️",
+                              "type": 3,
+                              "api": "csp_WexdiyembyGuard",
+                              "searchable": 1,
+                              "changeable": 1,
+                              "ext": {
+                                  "embynumber": i
+                              }
+                          }
+                          processed_sites.append(new_emby)
+                          print(f"✅ 生成新Emby配置: {new_emby['key']}")
+
+              # 单独处理push_agent和Wexconfig（暂存后重新添加，确保位置在最后）
+              # 先从processed_sites中移除暂存的配置
+              temp_sites = []
+              for site in processed_sites:
+                  key = site.get("key")
+                  if key == "push_agent":
+                      push_agent = site
+                      continue
+                  if key == "Wexconfig":
+                      wexconfig = site
+                      continue
+                  temp_sites.append(site)
+              processed_sites = temp_sites
+
+              # 应用名称映射和特殊修改
+              final_sites = []
+              for site in processed_sites:
+                  key = site.get("key")
+                  # 过滤需要删除的key
+                  if key in key_delete:
+                      continue
+                  # 应用特殊修改
+                  if key in special_mods:
+                      site.update(special_mods[key])
+                  # 名称映射处理
+                  if key in NAME_MAPPING:
+                      new_name = NAME_MAPPING[key]
+                      if key == "push_agent" and event_type != "workflow_dispatch":
+                          current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%m·%d")
+                          new_name += f"{current_date}"
+                      site["name"] = new_name
+                  final_sites.append(site)
+
+              # 按优先级排序
+              final_sites.sort(key=lambda x: PRIORITY_MAP.get(x.get("key"), 4))
+
+              # 最后添加Wexconfig和push_agent
+              if wexconfig:
+                  final_sites.append(wexconfig)
+              if push_agent:
+                  final_sites.append(push_agent)
+
+              # 保存处理后的JSON
+              data["sites"] = final_sites
+              with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=False)
+
+              print(f"✅ 处理完成，输出文件：{OUTPUT_FILE}")
+
+          except json.JSONDecodeError as e:
+              print(f"❌ JSON解析错误: {e}")
+              exit(1)
+          except Exception as e:
+              print(f"❌ 处理失败: {str(e)}")
+              exit(1)
+          EOF
+
+      - name: 上传至凯速平台
+        if: steps.comparator.outputs.changed == 'true'
+        run: |
+          set -euxo pipefail
+          echo "📤 开始上传至凯速平台: ${{ env.FINAL_JSON }}"
+          curl -sSf --retry 3 \
+            -F "file=@${{ env.FINAL_JSON }}" \
+            "https://upload.kstore.space/upload/${{ secrets.KSTORE_ID }}?access_token=${{ secrets.KSTORE_TOKEN }}"
+
+      - name: 创建版本发布
+        if: steps.comparator.outputs.changed == 'true' && github.event_name != 'workflow_dispatch'
+        run: |
+          set -euxo pipefail
+          TIMESTAMP=$(date +%s)
+          gh release create "v$TIMESTAMP" \
+            --title "$(date +%F)" \
+            --notes "Spider内容: $SPIDER_CONTENT" \
+            ${{ env.ORIGINAL_JSON }} \
+            --target ${{ github.sha }}
