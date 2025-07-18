@@ -3,7 +3,7 @@ name: Wex JSON Upload
 on:
   push:
     branches:
-      - wex
+      - mian
   workflow_dispatch:
   schedule:
     - cron: '*/50 * * * *'
