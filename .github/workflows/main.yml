@@ -3,7 +3,7 @@ name: Wex JSON Upload
 on:
   push:
     branches:
-      - mian
+      - main
   workflow_dispatch:
   schedule:
     - cron: '*/50 * * * *'
@@ -190,28 +190,28 @@ jobs:
                   # 情况2：EMBY_COUNT≥2 → 不保留原始Emby，在原位置插入新配置
                   if original_emby_index != -1:
                       print(f"📌 在原始Emby位置（{original_emby_index}）添加{emby_count}个新配置")
-                      # 生成新Emby配置并插入原位置
+                      # 生成新Emby配置并插入原位置（key从001开始，embynumber从0开始）
                       new_embys = []
                       for i in range(1, emby_count + 1):
                           new_emby = {
-                              "key": f"Wexdiyemby{str(i).zfill(3)}",
+                              "key": f"Wexdiyemby{str(i).zfill(3)}",  # i=1→001，i=2→002...
                               "name": f"🀄️emby{i}┃4K🀄️",
                               "type": 3,
                               "api": "csp_WexdiyembyGuard",
                               "searchable": 1,
                               "changeable": 1,
                               "ext": {
-                                  "embynumber": i
+                                  "embynumber": i - 1  # i=1→0，i=2→1...
                               }
                           }
                           new_embys.append(new_emby)
-                          print(f"✅ 生成新Emby配置: {new_emby['key']}")
+                          print(f"✅ 生成新Emby配置: {new_emby['key']}（embynumber={i-1}）")
                       # 插入原位置（多个新配置按顺序插入）
                       for i, emb in enumerate(reversed(new_embys)):
                           processed_sites.insert(original_emby_index, emb)
                   else:
                       print("⚠️ 未找到原始Emby配置（Wexemby），直接添加新配置到末尾")
-                      # 若原始Emby不存在，直接添加到末尾
+                      # 若原始Emby不存在，直接添加到末尾（同样key从001、embynumber从0开始）
                       for i in range(1, emby_count + 1):
                           new_emby = {
                               "key": f"Wexdiyemby{str(i).zfill(3)}",
@@ -221,11 +221,11 @@ jobs:
                               "searchable": 1,
                               "changeable": 1,
                               "ext": {
-                                  "embynumber": i
+                                  "embynumber": i - 1
                               }
                           }
                           processed_sites.append(new_emby)
-                          print(f"✅ 生成新Emby配置: {new_emby['key']}")
+                          print(f"✅ 生成新Emby配置: {new_emby['key']}（embynumber={i-1}）")
 
               # 单独处理push_agent和Wexconfig（暂存后重新添加，确保位置在最后）
               # 先从processed_sites中移除暂存的配置
