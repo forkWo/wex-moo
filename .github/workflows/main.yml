@@ -22,7 +22,9 @@ env:
   #凯速密钥
   KSTORE_TOKEN: ${{ secrets.KSTORE_TOKEN }}
   # 从环境变量获取Emby数量配置
-  EMBY_COUNT: ${{ secrets.EMBY_COUNT }}  
+  EMBY_COUNT: ${{ secrets.EMBY_COUNT }}
+  # 添加事件类型环境变量
+  EVENT_TYPE: ${{ github.event_name }}
 
 jobs:
   modify:
@@ -137,7 +139,7 @@ jobs:
           key_delete = json.loads(os.environ.get("key_DELETE", "[]"))
           switch_douban = os.environ.get("SWITCH_DOUBAN", "false").lower() == "true"  # 修正被替换的默认值
           douban_ext = os.environ.get("DOUBAN_ext", "")
-          event_type = os.environ.get("EVENT_TYPE", "")
+          event_type = os.environ.get("EVENT_TYPE", "")  # 获取事件类型
 
           special_mods = {}
           if switch_douban and douban_ext:
@@ -185,7 +187,7 @@ jobs:
                           original_emby_index = idx  # 记录原始Emby的位置
                           print(f"🔍 发现原始Emby配置（位置：{idx}）")
                           continue  # 暂不添加到processed_sites
-                      # 修复缩进：将非Emby站点添加到列表（原代码漏了缩进，导致只加最后一个）
+                      # 修复缩进：将非Emby站点添加到列表
                       processed_sites.append(site)
 
                   # 处理Emby配置（仅当process_emby为True时执行）
@@ -197,9 +199,9 @@ jobs:
                               new_embys = []
                               for i in range(1, emby_count + 1):
                                   new_emby = {
-                                      "key": f"Wexdiyemby{str(i).zfill(3)}",  # 修正被替换的zfill参数
+                                      "key": f"Wexdiyemby{str(i).zfill(3)}",
                                       "name": f"🀄️emby{i}┃4K🀄️",
-                                      "type": 3,  # 修正被替换的类型值
+                                      "type": 3,
                                       "api": "csp_WexdiyembyGuard",
                                       "searchable": 1,
                                       "changeable": 1,
@@ -215,9 +217,9 @@ jobs:
                               # 原始Emby不存在，直接添加到末尾
                               for i in range(1, emby_count + 1):
                                   new_emby = {
-                                      "key": f"Wexdiyemby{str(i).zfill(3)}",  # 修正被替换的zfill参数
+                                      "key": f"Wexdiyemby{str(i).zfill(3)}",
                                       "name": f"🀄️emby{i}┃4K🀄️",
-                                      "type": 3,  # 修正被替换的类型值
+                                      "type": 3,
                                       "api": "csp_WexdiyembyGuard",
                                       "searchable": 1,
                                       "changeable": 1,
@@ -266,9 +268,13 @@ jobs:
                       # 名称映射处理
                       if key in NAME_MAPPING:
                           new_name = NAME_MAPPING[key]
-                          if key == "push_agent" and event_type != "workflow_dispatch":
-                              current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%m·%d")
-                              new_name += f"{current_date}"
+                          # 处理push_agent的更新时间
+                          if key == "push_agent":
+                              # 自动更新（非workflow_dispatch）时添加日期
+                              if event_type != "workflow_dispatch":
+                                  # 格式化为"7.25"样式
+                                  current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%-m.%d")
+                                  new_name += current_date
                           site["name"] = new_name
                       final_sites.append(site)
 
@@ -279,6 +285,14 @@ jobs:
                   if wexconfig:
                       final_sites.append(wexconfig)
                   if push_agent:
+                      # 处理push_agent的名称
+                      if push_agent.get("key") == "push_agent":
+                          base_name = NAME_MAPPING.get("push_agent", "推送")
+                          if event_type != "workflow_dispatch":
+                              current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%-m.%d")
+                              push_agent["name"] = base_name + current_date
+                          else:
+                              push_agent["name"] = base_name
                       final_sites.append(push_agent)
 
                   data["sites"] = final_sites
