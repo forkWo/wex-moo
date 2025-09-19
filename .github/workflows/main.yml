@@ -105,7 +105,7 @@ jobs:
           python3 <<EOF
           import json
           import os
-          import copy  # 导入copy模块用于深拷贝
+          import copy
           from datetime import datetime, timezone, timedelta
 
           INPUT_FILE = "${{ env.ORIGINAL_JSON }}"
@@ -133,13 +133,13 @@ jobs:
           PRIORITY_MAP = {
               "Douban": 1,
               "Wexokconfig": 2,
-              "玩偶": 3  # 修正被替换的数字
+              "玩偶": 3
           }
 
           key_delete = json.loads(os.environ.get("key_DELETE", "[]"))
-          switch_douban = os.environ.get("SWITCH_DOUBAN", "false").lower() == "true"  # 修正被替换的默认值
+          switch_douban = os.environ.get("SWITCH_DOUBAN", "false").lower() == "true"
           douban_ext = os.environ.get("DOUBAN_ext", "")
-          event_type = os.environ.get("EVENT_TYPE", "")  # 获取事件类型
+          event_type = os.environ.get("EVENT_TYPE", "")
 
           special_mods = {}
           if switch_douban and douban_ext:
@@ -152,7 +152,7 @@ jobs:
               with open(INPUT_FILE, "r", encoding="utf-8") as f:
                   original_data = json.load(f)
 
-              # 复制原始数据用于两个文件的处理（使用copy.deepcopy，修正错误）
+              # 复制原始数据用于两个文件的处理
               data_wex = copy.deepcopy(original_data)
               data_wexme = copy.deepcopy(original_data)
 
@@ -187,7 +187,6 @@ jobs:
                           original_emby_index = idx  # 记录原始Emby的位置
                           print(f"🔍 发现原始Emby配置（位置：{idx}）")
                           continue  # 暂不添加到processed_sites
-                      # 修复缩进：将非Emby站点添加到列表
                       processed_sites.append(site)
 
                   # 处理Emby配置（仅当process_emby为True时执行）
@@ -231,16 +230,18 @@ jobs:
                       else:
                           # 不替换但保留原始Emby（仅当process_emby为True且count<2时）
                           if original_emby_index != -1:
-                              # 修正被替换的索引值（取第一个匹配项）
-                              original_emby = [s for s in sites if s.get("key") == "Wexemby"][0]
-                              processed_sites.insert(original_emby_index, original_emby)
+                              # 修正：从原始站点列表中获取原始Emby配置
+                              original_emby = next((s for s in sites if s.get("key") == "Wexemby"), None)
+                              if original_emby:
+                                  processed_sites.insert(original_emby_index, original_emby)
                   else:
                       # 不处理Emby（wex.json）：保留原始Emby
                       if original_emby_index != -1:
-                          # 修正被替换的索引值
-                          original_emby = [s for s in sites if s.get("key") == "Wexemby"][0]
-                          processed_sites.insert(original_emby_index, original_emby)
-                          print(f"✅ 保留原始Emby配置（wex.json）")
+                          # 修正：从原始站点列表中获取原始Emby配置
+                          original_emby = next((s for s in sites if s.get("key") == "Wexemby"), None)
+                          if original_emby:
+                              processed_sites.insert(original_emby_index, original_emby)
+                              print(f"✅ 保留原始Emby配置（wex.json）")
 
                   # 单独处理push_agent和Wexconfig（暂存后重新添加，确保位置在最后）
                   temp_sites = []
@@ -284,6 +285,21 @@ jobs:
                   # 最后添加Wexconfig和push_agent
                   if wexconfig:
                       final_sites.append(wexconfig)
+                  
+                  # 添加嗷呜弹幕配置（在push_agent前面）
+                  aowu_config = {
+                      "jar": "https://gitee.com/amg99/tvjson/raw/master/spider/custom_spider.jar",
+                      "name": "嗷呜弹幕",
+                      "key": "嗷呜弹幕",
+                      "type": 3,
+                      "api": "csp_GoConfig",
+                      "searchable": 0,
+                      "filterable": 0,
+                      "quickSearch": 0,
+                      "changeable": 0
+                  }
+                  final_sites.append(aowu_config)
+                  
                   if push_agent:
                       # 处理push_agent的名称
                       if push_agent.get("key") == "push_agent":
