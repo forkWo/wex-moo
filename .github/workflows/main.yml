@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           RUNS=$(curl -sLf --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100" || true)
-          OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run极光解析) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
+          OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
       - name: 下载原始JSON数据
