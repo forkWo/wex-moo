@@ -188,6 +188,12 @@ jobs:
                           original_emby_index = idx  # 记录原始Emby的位置
                           print(f"🔍 发现原始Emby配置（位置：{idx}）")
                           continue  # 暂不添加到processed_sites
+                      
+                      # 在wexme.json中完全删除Douban配置
+                      if process_emby and key == "Douban":
+                          print("🗑️ 在wexme.json中删除Douban配置")
+                          continue
+                          
                       processed_sites.append(site)
 
                   # 处理Emby配置（仅当process_emby为True时执行）
