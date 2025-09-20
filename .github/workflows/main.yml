@@ -269,7 +269,7 @@ jobs:
                           site.update(special_mods[key])
                       # 名称映射处理
                       if key in NAME_MAPPING:
-                          new_name = NAME极光解析ING[key]
+                          new_name = NAME_MAPPING[key]
                           # 处理push_agent的更新时间
                           if key == "push_agent":
                               # 自动更新（非workflow_dispatch）时添加日期
