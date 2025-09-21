@@ -295,7 +295,7 @@ jobs:
                       "api": "csp_GoConfig",
                       "indexs": 1,
                       "searchable": 1,
-                      "filterable": ,
+                      "filterable": 0,
                       "quickSearch": 1,
                       "changeable": 0,
                       "ext": "https://gitee.com/linlinyo/gitee/raw/main/lib"
