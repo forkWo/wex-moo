@@ -131,6 +131,7 @@ jobs:
           }
 
           PRIORITY_MAP = {
+              "嗷呜弹幕": 0,  # 最高优先级，排在最前
               "Douban": 1,
               "Wexokconfig": 2,
               "玩偶": 3
@@ -187,6 +188,12 @@ jobs:
                           original_emby_index = idx  # 记录原始Emby的位置
                           print(f"🔍 发现原始Emby配置（位置：{idx}）")
                           continue  # 暂不添加到processed_sites
+                      
+                      # 在wexme.json中完全删除Douban配置
+                      if process_emby and key == "Douban":
+                          print("🗑️ 在wexme.json中删除Douban配置")
+                          continue
+                          
                       processed_sites.append(site)
 
                   # 处理Emby配置（仅当process_emby为True时执行）
@@ -279,29 +286,31 @@ jobs:
                           site["name"] = new_name
                       final_sites.append(site)
 
+                  # 在wexme.json中添加嗷呜弹幕配置（排在最前）
+                  if process_emby:
+                      aowu_config = {
+                          "jar": "https://gitee.com/linlinyo/gitee/raw/main/custom_spider.jar",
+                          "name": "推荐",
+                          "key": "嗷呜弹幕",
+                          "type": 3,
+                          "api": "csp_GoConfig",
+                          "indexs": 1,
+                          "searchable": 0,
+                          "filterable": 0,
+                          "quickSearch": 0,
+                          "changeable": 0,
+                          "ext": "https://gitee.com/linlinyo/gitee/raw/main/dmlib"
+                      }
+                      # 添加到列表开头，确保排在最前
+                      final_sites.insert(0, aowu_config)
+                      print("✅ 添加嗷呜弹幕配置到wexme.json（排在最前）")
+
                   # 按优先级排序
                   final_sites.sort(key=lambda x: PRIORITY_MAP.get(x.get("key"), 4))
 
                   # 最后添加Wexconfig和push_agent
                   if wexconfig:
                       final_sites.append(wexconfig)
-                  
-                  # 添加嗷呜弹幕配置（在push_agent前面）
-                  aowu_config = {
-                      "jar": "https://gitee.com/linlinyo/gitee/raw/main/custom_spider.jar",
-                      "name": "嗷呜弹幕",
-                      "key": "嗷呜弹幕",
-                      "type": 3,
-                      "api": "csp_GoConfig",
-                      "indexs": 1,
-                      "searchable": 1,
-                      "filterable": 0,
-                      "quickSearch": 1,
-                      "changeable": 0,
-                      "ext": "https://gitee.com/linlinyo/gitee/raw/main/lib"
-                  }
-                  final_sites.append(aowu_config)
-                  
                   if push_agent:
                       # 处理push_agent的名称
                       if push_agent.get("key") == "push_agent":
