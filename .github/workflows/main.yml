@@ -56,7 +56,7 @@ jobs:
       - name: 下载原始JSON数据
         run: |
           set -euxo pipefail
-          curl -fsSL --retry 1 -o ${{ env.ORIGINAL_JSON }} "https://9280.kstore.space/wex.json"
+          curl -fsSL --retry 1 -o ${{ env.ORIGINAL_JSON }} "https://d.kstore.dev/download/9280/wex.json"
           jq empty ${{ env.ORIGINAL_JSON }}
 
       - name: 提取Spider内容
