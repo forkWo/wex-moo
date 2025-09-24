@@ -288,7 +288,7 @@ jobs:
                   
                   # 添加嗷呜弹幕配置（在push_agent前面）
                   aowu_config = {
-                      "jar": "https://gitee.com/linlinyo/gitee/raw/main/custom_spider.jar",
+                      "jar": "https://d.kstore.dev/download/9763/spider/custom_spider.jar",
                       "name": "嗷呜弹幕",
                       "key": "嗷呜弹幕",
                       "type": 3,
@@ -297,8 +297,7 @@ jobs:
                       "searchable": 1,
                       "filterable": 0,
                       "quickSearch": 1,
-                      "changeable": 0,
-                      "ext": "https://gitee.com/linlinyo/gitee/raw/main/dmlib"
+                      "changeable": 0
                   }
                   final_sites.append(aowu_config)
                   
