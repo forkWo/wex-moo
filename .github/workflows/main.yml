@@ -287,8 +287,8 @@ jobs:
                       final_sites.append(wexconfig)
                   
                   # 添加嗷呜弹幕配置（在push_agent前面）
-                  aowu_config = {
-                  }
+                  aowu_config = 
+                  
                   final_sites.append(aowu_config)
                   
                   if push_agent:
