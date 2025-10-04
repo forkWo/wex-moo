@@ -286,22 +286,6 @@ jobs:
                   if wexconfig:
                       final_sites.append(wexconfig)
                   
-                  # 添加嗷呜弹幕配置（在push_agent前面）
-                  aowu_config = {
-                      "jar": "https://gitee.com/linlinyo/gitee/raw/main/custom_spider.jar",
-                      "name": "嗷呜弹幕",
-                      "key": "嗷呜弹幕",
-                      "type": 3,
-                      "api": "csp_GoConfig",
-                      "indexs": 1,
-                      "searchable": 1,
-                      "filterable": 0,
-                      "quickSearch": 1,
-                      "changeable": 0,
-                      "ext": "https://gitee.com/linlinyo/gitee/raw/main/dmlib"
-                  }
-                  final_sites.append(aowu_config)
-                  
                   if push_agent:
                       # 处理push_agent的名称
                       if push_agent.get("key") == "push_agent":
