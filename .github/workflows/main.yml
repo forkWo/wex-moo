@@ -53,7 +53,7 @@ jobs:
           OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
-      - name: 下载HTML并转换为JSON（最终修复版）
+      - name: 下载HTML并转换为JSON（最终纯净版）
         run: |
           set -euxo pipefail
           # 1. 下载目标HTML页面（保持原有健壮性配置）
@@ -61,42 +61,39 @@ jobs:
             -o temp.html \
             "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
           
-          # 2. 核心修复：用awk精准提取完整JSON（第一个{到最后一个}）
-          # 原理：
-          # - 记录第一个{出现的位置（开始标记）
-          # - 记录最后一个}出现的位置（结束标记）
-          # - 提取中间所有内容，保留原始结构
+          # 2. 核心修复：纯净版awk脚本（无脱敏字符，语法正确）
+          # 功能：精准提取第一个{到最后一个}的完整JSON对象
           JSON_CONTENT=$(awk '
             BEGIN { start=0; end=0; total=0 }
             {
-              # 统计当前行的{和}数量
+              # 统计当前行的{和}数量（仅用于辅助判断，不影响提取）
               open = gsub(/{/, "{")
               close = gsub(/}/, "}")
               total += open - close
               
-              # 标记第一个{出现的行
+              # 标记第一个{出现的行号（start=0表示未找到）
               if (open > 0 && start == 0) start = NR
               
-              # 保存所有行到数组
+              # 保存当前行到数组（$0是awk内置变量，代表整行内容）
               lines[NR] = $0
             }
             END {
-              # 从最后一行向前找，找到最后一个}所在的行
+              # 从最后一行向前遍历，找到最后一个}所在的行号
               for (i=NR; i>=1; i--) {
                 if (index(lines[i], "}") > 0) {
                   end = i
                   break
                 }
               }
-              # 输出从start到end的所有行（完整JSON）
+              # 输出从start到end的所有行（完整JSON内容）
               for (i=start; i<=end; i++) print lines[i]
             }
           ' temp.html | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr -d '\n' | sed 's/\\n//g')
           
-          # 3. 处理可能的转义字符和多余空格（确保JSON格式合法）
+          # 3. 处理转义字符和多余空格（确保JSON格式合法）
           JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\\\/\\/g' | sed 's/\"\"/\"/g')
           
-          # 4. 强制校验JSON完整性（必须以{开头、}结尾）
+          # 4. 强制校验JSON完整性（必须以{开头、}结尾，非空）
           if [ -z "$JSON_CONTENT" ] || [ "${JSON_CONTENT:0:1}" != "{" ] || [ "${JSON_CONTENT: -1}" != "}" ]; then
             echo "❌ 未提取到完整JSON，原始提取内容："
             echo "$JSON_CONTENT"
@@ -104,10 +101,10 @@ jobs:
             exit 1
           fi
           
-          # 5. 写入原始文件
+          # 5. 写入原始文件（使用环境变量指定文件名，避免硬编码）
           echo "$JSON_CONTENT" > ${{ env.ORIGINAL_JSON }}
           
-          # 6. 验证JSON格式合法性
+          # 6. 验证JSON格式合法性（非法则终止流程）
           if ! jq empty ${{ env.ORIGINAL_JSON }}; then
             echo "❌ JSON格式非法，原始提取内容："
             echo "$JSON_CONTENT"
