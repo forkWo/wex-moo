@@ -53,7 +53,7 @@ jobs:
           OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
-      - name: 下载HTML并转换为JSON（修复sed错误+优化提取逻辑）
+      - name: 下载HTML并转换为JSON（彻底修复提取逻辑）
         run: |
           set -euxo pipefail
           # 1. 下载目标HTML页面（增加重试次数，设置超时时间）
@@ -61,17 +61,19 @@ jobs:
             -o temp.html \
             "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
           
-          # 2. 从HTML中提取JSON数据（修复sed语法，优化提取逻辑）
-          # 核心逻辑：提取所有{}包裹的内容，取最长的合法JSON（避免部分匹配）
-          # 修复点：sed '$s/$/}/' 正确语法（在最后一行末尾添加}）
-          JSON_CONTENT=$(grep -oP '\{.*?\}' temp.html | tr -d '\n' | sed 's/^/\{/' | sed '$s/$/}/')
+          # 2. 从HTML中提取完整JSON（核心修复：直接提取第一个{到最后一个}的完整内容）
+          # 步骤分解：
+          # - sed -n '/{/,/}/p'：提取所有包含{和}的行（即JSON所在的所有行）
+          # - sed 's/^[^{]*//; s/[^}]*$//'：去掉每行开头非{的内容和结尾非}的内容（纯净JSON）
+          # - tr -d '\n'：去除换行符，合并为单行JSON
+          JSON_CONTENT=$(sed -n '/{/,/}/p' temp.html | sed 's/^[^{]*//; s/[^}]*$//' | tr -d '\n')
           
           # 3. 处理可能的转义字符和多余空格（确保JSON格式合法）
           JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\n/\n/g' | sed 's/\\r//g' | sed 's/\\\\/\\/g' | sed 's/\"\"/\"/g')
           
-          # 4. 处理grep提取失败的情况
-          if [ -z "$JSON_CONTENT" ] || [ "$JSON_CONTENT" == "{}" ]; then
-            echo "❌ 未从HTML中提取到有效JSON数据，查看HTML内容排查"
+          # 4. 处理提取失败的情况（空值或不完整JSON）
+          if [ -z "$JSON_CONTENT" ] || [ "${JSON_CONTENT:0:1}" != "{" ] || [ "${JSON_CONTENT: -1}" != "}" ]; then
+            echo "❌ 未从HTML中提取到完整JSON数据，查看HTML内容排查"
             cat temp.html
             exit 1
           fi
