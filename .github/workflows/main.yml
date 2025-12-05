@@ -53,37 +53,63 @@ jobs:
           OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
-      - name: 下载HTML并转换为JSON（彻底修复提取逻辑）
+      - name: 下载HTML并转换为JSON（最终修复版）
         run: |
           set -euxo pipefail
-          # 1. 下载目标HTML页面（增加重试次数，设置超时时间）
+          # 1. 下载目标HTML页面（保持原有健壮性配置）
           curl -fsSL --retry 3 --retry-delay 5 --max-time 30 \
             -o temp.html \
             "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
           
-          # 2. 从HTML中提取完整JSON（核心修复：直接提取第一个{到最后一个}的完整内容）
-          # 步骤分解：
-          # - sed -n '/{/,/}/p'：提取所有包含{和}的行（即JSON所在的所有行）
-          # - sed 's/^[^{]*//; s/[^}]*$//'：去掉每行开头非{的内容和结尾非}的内容（纯净JSON）
-          # - tr -d '\n'：去除换行符，合并为单行JSON
-          JSON_CONTENT=$(sed -n '/{/,/}/p' temp.html | sed 's/^[^{]*//; s/[^}]*$//' | tr -d '\n')
+          # 2. 核心修复：用awk精准提取完整JSON（第一个{到最后一个}）
+          # 原理：
+          # - 记录第一个{出现的位置（开始标记）
+          # - 记录最后一个}出现的位置（结束标记）
+          # - 提取中间所有内容，保留原始结构
+          JSON_CONTENT=$(awk '
+            BEGIN { start=0; end=0; total=0 }
+            {
+              # 统计当前行的{和}数量
+              open = gsub(/{/, "{")
+              close = gsub(/}/, "}")
+              total += open - close
+              
+              # 标记第一个{出现的行
+              if (open > 0 && start == 0) start = NR
+              
+              # 保存所有行到数组
+              lines[NR] = $0
+            }
+            END {
+              # 从最后一行向前找，找到最后一个}所在的行
+              for (i=NR; i>=1; i--) {
+                if (index(lines[i], "}") > 0) {
+                  end = i
+                  break
+                }
+              }
+              # 输出从start到end的所有行（完整JSON）
+              for (i=start; i<=end; i++) print lines[i]
+            }
+          ' temp.html | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr -d '\n' | sed 's/\\n//g')
           
           # 3. 处理可能的转义字符和多余空格（确保JSON格式合法）
-          JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\n/\n/g' | sed 's/\\r//g' | sed 's/\\\\/\\/g' | sed 's/\"\"/\"/g')
+          JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\\\/\\/g' | sed 's/\"\"/\"/g')
           
-          # 4. 处理提取失败的情况（空值或不完整JSON）
+          # 4. 强制校验JSON完整性（必须以{开头、}结尾）
           if [ -z "$JSON_CONTENT" ] || [ "${JSON_CONTENT:0:1}" != "{" ] || [ "${JSON_CONTENT: -1}" != "}" ]; then
-            echo "❌ 未从HTML中提取到完整JSON数据，查看HTML内容排查"
+            echo "❌ 未提取到完整JSON，原始提取内容："
+            echo "$JSON_CONTENT"
             cat temp.html
             exit 1
           fi
           
-          # 5. 将提取的JSON写入原始文件
+          # 5. 写入原始文件
           echo "$JSON_CONTENT" > ${{ env.ORIGINAL_JSON }}
           
-          # 6. 验证JSON格式合法性（非法则报错终止）
+          # 6. 验证JSON格式合法性
           if ! jq empty ${{ env.ORIGINAL_JSON }}; then
-            echo "❌ 提取的JSON格式非法，原始提取内容："
+            echo "❌ JSON格式非法，原始提取内容："
             echo "$JSON_CONTENT"
             echo "------------------ HTML原始内容 ------------------"
             cat temp.html
@@ -92,7 +118,7 @@ jobs:
           
           # 7. 清理临时文件
           rm -f temp.html
-          echo "✅ 成功从HTML提取并转换JSON，保存至 ${{ env.ORIGINAL_JSON }}"
+          echo "✅ 成功提取完整JSON，保存至 ${{ env.ORIGINAL_JSON }}"
 
       - name: 提取Spider内容
         if: github.event_name != 'workflow_dispatch'
