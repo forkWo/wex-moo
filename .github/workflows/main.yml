@@ -37,28 +37,55 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 配置Python环境
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
-      - name: 安装系统依赖
-        run: |
-          sudo apt-get install -y jq curl
-
-      - name: 清理历史记录
-        run: |
-          set -euo pipefail
-          RUNS=$(curl -sLf --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100" || true)
-          OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
-          [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
-
-      - name: 下载原始JSON数据
+      - name: 配置环境依赖
         run: |
           set -euxo pipefail
-          curl -fsSL --retry 1 -o ${{ env.ORIGINAL_JSON }} "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
-          jq empty ${{ env.ORIGINAL_JSON }}
+          # 安装jq（JSON处理）、curl（网络请求）
+          sudo apt-get update && sudo apt-get install -y jq curl
+          # 初始化空文件避免后续报错
+          touch ${{ env.ORIGINAL_JSON }}
 
+      - name: 下载并排查数据源（核心优化步骤）
+        run: |
+          set -euxo pipefail
+          # 1. 模拟浏览器请求目标URL（无Cookie），保留响应日志
+          curl -fsSL --retry 3 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: application/json, text/javascript, */*; q=0.01" \
+            -H "X-Requested-With: XMLHttpRequest" \
+            -H "Referer: https://www.xn--sss604efuw.com/" \
+            -v \  # 输出详细请求日志（排查用）
+            -o ${{ env.ORIGINAL_JSON }} \
+            "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
+
+          # 2. 排查返回内容类型
+          echo "===== 🔍 数据源返回内容检测 ====="
+          if grep -qi "<html" ${{ env.ORIGINAL_JSON }}; then
+            echo "❌ 检测到返回HTML（反爬/验证页/错误页），输出前20行内容："
+            head -20 ${{ env.ORIGINAL_JSON }}
+            exit 1  # 终止流程，避免后续无效处理
+          else
+            echo "✅ 未检测到HTML，继续处理JSON"
+          fi
+
+          # 3. 修复JSON常见语法错误（多余逗号、无效数字等）
+          echo "===== 🛠️ 修复JSON语法 ====="
+          cat ${{ env.ORIGINAL_JSON }} \
+            | sed 's/,\s*}/}/g' \  # 移除对象末尾多余逗号
+            | sed 's/,\s*]/]/g' \  # 移除数组末尾多余逗号
+            | sed 's/\.\s*}/}/g' \ # 修复无效数字（如123.} → 123}）
+            > ${{ env.ORIGINAL_JSON }}.tmp && mv ${{ env.ORIGINAL_JSON }}.tmp ${{ env.ORIGINAL_JSON }}
+
+          # 4. 验证JSON格式有效性
+          echo "===== ✅ 验证JSON格式 ====="
+          if ! jq empty ${{ env.ORIGINAL_JSON }}; then
+            echo "❌ JSON格式验证失败，输出当前文件内容："
+            cat ${{ env.ORIGINAL_JSON }}
+            exit 1
+          else
+            echo "✅ JSON格式验证通过"
+          fi
+          
       - name: 提取Spider内容
         if: github.event_name != 'workflow_dispatch'
         id: spider
