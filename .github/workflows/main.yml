@@ -37,12 +37,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 安装Python依赖（如需）
-        run: pip3 install beautifulsoup4 requests
+      - name: 配置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
 
       - name: 安装系统依赖
         run: |
-          sudo apt-get install -y jq curl grep sed
+          sudo apt-get install -y jq curl
 
       - name: 清理历史记录
         run: |
@@ -51,81 +53,11 @@ jobs:
           OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
-      - name: 下载HTML并提取JSON（Python优化版）
+      - name: 下载原始JSON数据
         run: |
           set -euxo pipefail
-          # 配置参数
-          HTML_URL="https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
-          OUTPUT_JSON="${{ env.ORIGINAL_JSON }}"
-          
-          # 用Python脚本实现提取（优势：JSON解析更精准，支持复杂HTML）
-          python3 <<EOF
-          import requests
-          import json
-          import re
-          from bs4 import BeautifulSoup  # 如需解析复杂HTML，可安装bs4（下方有安装命令）
-          
-          # 1. 下载HTML（支持重试、超时、证书忽略）
-          session = requests.Session()
-          session.verify = False  # 忽略HTTPS证书警告
-          try:
-              response = session.get(
-                  url="$HTML_URL",
-                  timeout=30,
-                  allow_redirects=True,
-                  headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-              )
-              response.raise_for_status()  # 抛出HTTP错误（如404、500）
-              html_content = response.text
-              print(f"✅ 成功下载HTML，大小：{len(html_content)} 字节")
-          except Exception as e:
-              print(f"❌ 下载HTML失败：{str(e)}")
-              exit(1)
-          
-          # 2. 提取JSON核心逻辑（两种模式，按需选择）
-          def extract_json_from_html(html):
-              # 模式1：提取所有{}包裹的内容，筛选最长合法JSON（适合JSON直接渲染）
-              json_pattern = r'\{[^{}]+\}'  # 匹配{}包裹的内容（非贪婪）
-              json_candidates = re.findall(json_pattern, html, re.DOTALL)
-              
-              # 拼接所有候选片段（处理JSON被分割的情况）
-              full_candidate = ''.join(json_candidates)
-              
-              # 尝试解析为JSON，返回第一个合法的完整对象
-              try:
-                  # 先尝试直接解析（完整JSON）
-                  return json.loads(full_candidate)
-              except json.JSONDecodeError:
-                  # 模式2：精准匹配顶层JSON对象（从第一个{到最后一个}）
-                  start_idx = html.find('{')
-                  end_idx = html.rfind('}')
-                  if start_idx == -1 or end_idx == -1 or start_idx >= end_idx:
-                      raise ValueError("未找到完整JSON边界")
-                  json_str = html[start_idx:end_idx+1]
-                  # 清理多余字符（注释、空格等）
-                  json_str = re.sub(r'//.*?$', '', json_str, flags=re.MULTILINE)  # 去除//注释
-                  json_str = re.sub(r'\s+', ' ', json_str)  # 合并多余空格
-                  return json.loads(json_str)
-          
-          # 3. 执行提取并验证
-          try:
-              json_data = extract_json_from_html(html_content)
-              print(f"✅ 成功提取JSON，包含字段：{list(json_data.keys())}")
-          except Exception as e:
-              print(f"❌ 提取JSON失败：{str(e)}")
-              print("HTML内容预览：", html_content[:2000])  # 输出前2000字符便于排查
-              exit(1)
-          
-          # 4. 写入新JSON文件（格式化输出，便于查看）
-          try:
-              with open("$OUTPUT_JSON", 'w', encoding='utf-8') as f:
-                  json.dump(json_data, f, ensure_ascii=False, indent=2)
-              print(f"✅ 成功写入JSON文件：{OUTPUT_JSON}")
-              print(f"文件大小：{len(open('$OUTPUT_JSON', 'r').read())} 字节")
-          except Exception as e:
-              print(f"❌ 写入JSON文件失败：{str(e)}")
-              exit(1)
-          EOF
+          curl -fsSL --retry 1 -o ${{ env.ORIGINAL_JSON }} "https://9280.kstore.space/wex.json"
+          jq empty ${{ env.ORIGINAL_JSON }}
 
       - name: 提取Spider内容
         if: github.event_name != 'workflow_dispatch'
@@ -411,9 +343,6 @@ jobs:
           TIMESTAMP=$(date +%s)
           gh release create "v$TIMESTAMP" \
             --title "$(date +%F)" \
-            --notes "Spider内容: $SPIDER_CONTENT" \
-            ${{ env.FINAL_JSON }} ${{ env.FINAL_JSON_ME }} \
-            --target ${{ github.sha }}
             --notes "Spider内容: $SPIDER_CONTENT" \
             ${{ env.FINAL_JSON }} ${{ env.FINAL_JSON_ME }} \
             --target ${{ github.sha }}
