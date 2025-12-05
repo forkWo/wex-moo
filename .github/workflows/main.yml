@@ -53,7 +53,7 @@ jobs:
           OLD_RUNS=$(echo "$RUNS" | jq -r '.workflow_runs | sort_by(.run_number) | reverse | .[1:] | map(select(.status == "completed")) | .[] | .id' 2>/dev/null)
           [ -n "$OLD_RUNS" ] && echo "🗑️ 清理历史记录" && echo "$OLD_RUNS" | xargs -I{} curl -sLf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${{ github.repository }}/actions/runs/{}"
 
-      - name: 下载HTML并转换为JSON（优化后）
+      - name: 下载HTML并转换为JSON（修复sed错误+优化提取逻辑）
         run: |
           set -euxo pipefail
           # 1. 下载目标HTML页面（增加重试次数，设置超时时间）
@@ -61,24 +61,34 @@ jobs:
             -o temp.html \
             "https://www.xn--sss604efuw.com/jm/jiemi.php?url=http://tv.999888987.xyz"
           
-          # 2. 从HTML中提取JSON数据（假设JSON是页面中唯一的大括号包裹内容，适配常见渲染场景）
-          # 核心逻辑：提取第一个{到最后一个}之间的所有内容（兼容HTML中JSON直接渲染的情况）
-          JSON_CONTENT=$(grep -oP '(?<=\{).*(?=\})' temp.html | sed 's/^/\{/' | sed '$/}/')
+          # 2. 从HTML中提取JSON数据（修复sed语法，优化提取逻辑）
+          # 核心逻辑：提取所有{}包裹的内容，取最长的合法JSON（避免部分匹配）
+          # 修复点：sed '$s/$/}/' 正确语法（在最后一行末尾添加}）
+          JSON_CONTENT=$(grep -oP '\{.*?\}' temp.html | tr -d '\n' | sed 's/^/\{/' | sed '$s/$/}/')
           
           # 3. 处理可能的转义字符和多余空格（确保JSON格式合法）
-          JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\n/\n/g' | sed 's/\\r//g' | sed 's/\\\\/\\/g')
+          JSON_CONTENT=$(echo "$JSON_CONTENT" | sed 's/\\n/\n/g' | sed 's/\\r//g' | sed 's/\\\\/\\/g' | sed 's/\"\"/\"/g')
           
-          # 4. 将提取的JSON写入原始文件
-          echo "$JSON_CONTENT" > ${{ env.ORIGINAL_JSON }}
-          
-          # 5. 验证JSON格式合法性（非法则报错终止）
-          if ! jq empty ${{ env.ORIGINAL_JSON }}; then
-            echo "❌ 提取的JSON格式非法，查看temp.html内容排查问题"
+          # 4. 处理grep提取失败的情况
+          if [ -z "$JSON_CONTENT" ] || [ "$JSON_CONTENT" == "{}" ]; then
+            echo "❌ 未从HTML中提取到有效JSON数据，查看HTML内容排查"
             cat temp.html
             exit 1
           fi
           
-          # 6. 清理临时文件
+          # 5. 将提取的JSON写入原始文件
+          echo "$JSON_CONTENT" > ${{ env.ORIGINAL_JSON }}
+          
+          # 6. 验证JSON格式合法性（非法则报错终止）
+          if ! jq empty ${{ env.ORIGINAL_JSON }}; then
+            echo "❌ 提取的JSON格式非法，原始提取内容："
+            echo "$JSON_CONTENT"
+            echo "------------------ HTML原始内容 ------------------"
+            cat temp.html
+            exit 1
+          fi
+          
+          # 7. 清理临时文件
           rm -f temp.html
           echo "✅ 成功从HTML提取并转换JSON，保存至 ${{ env.ORIGINAL_JSON }}"
 
