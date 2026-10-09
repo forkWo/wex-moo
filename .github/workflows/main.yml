@@ -25,8 +25,6 @@ env:
   # Emby数量配置（直接修改此处数值，无需设置Secret）
   # 0=删除全部Emby  1=保留第一个Emby  2+=新建N个Emby
   EMBY_COUNT: "0"
-  # 添加事件类型环境变量
-  EVENT_TYPE: ${{ github.event_name }}
 
 jobs:
   modify:
@@ -109,7 +107,6 @@ jobs:
           import os
           import copy
           import re
-          from datetime import datetime, timezone, timedelta
 
           INPUT_FILE = os.environ.get("ORIGINAL_JSON", "aiwex.json")
           OUTPUT_FILE_WEX = os.environ.get("FINAL_JSON", "wex.json")
@@ -162,7 +159,6 @@ jobs:
           key_delete = json.loads(os.environ.get("key_DELETE", "[]"))
           switch_douban = os.environ.get("SWITCH_DOUBAN", "false").lower() == "true"
           douban_ext = os.environ.get("DOUBAN_ext", "")
-          event_type = os.environ.get("EVENT_TYPE", "")
 
           special_mods = {}
           if switch_douban and douban_ext:
@@ -236,19 +232,9 @@ jobs:
                               sites.insert(insert_index, emb)
                   # ===== Emby 处理结束 =====
 
-                  # 单独处理push_agent（暂存后重新添加，确保位置在最后）
-                  processed_sites = []
-                  push_agent = None
-                  for site in sites:
-                      key = site.get("key")
-                      if key == "push_agent":
-                          push_agent = site
-                          continue
-                      processed_sites.append(site)
-
-                  # 应用名称映射和特殊修改
+                  # 应用名称映射和特殊修改（所有站点保持原始顺序）
                   final_sites = []
-                  for site in processed_sites:
+                  for site in sites:
                       key = site.get("key")
                       # 过滤需要删除的key
                       if key in key_delete:
@@ -258,24 +244,8 @@ jobs:
                           site.update(special_mods[key])
                       # 名称映射处理
                       if key in NAME_MAPPING:
-                          new_name = NAME_MAPPING[key]
-                          if key == "push_agent":
-                              if event_type != "workflow_dispatch":
-                                  current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%-m.%d")
-                                  new_name += current_date
-                          site["name"] = new_name
+                          site["name"] = NAME_MAPPING[key]
                       final_sites.append(site)
-
-                  # 最后添加push_agent
-                  if push_agent:
-                      if push_agent.get("key") == "push_agent":
-                          base_name = NAME_MAPPING.get("push_agent", "推送")
-                          if event_type != "workflow_dispatch":
-                              current_date = datetime.now(timezone(timedelta(hours=8))).strftime("%-m.%d")
-                              push_agent["name"] = base_name + current_date
-                          else:
-                              push_agent["name"] = base_name
-                      final_sites.append(push_agent)
 
                   data["sites"] = final_sites
                   return data
