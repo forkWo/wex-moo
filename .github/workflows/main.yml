@@ -125,6 +125,7 @@ jobs:
 
           NAME_MAPPING = {
               "Douban": "🐮【推荐】🐮",
+              "Wexconfig": "🐮配置中心🐮",
               "Wexokconfig": "🐮配置中心🐮",
               "Wexnullname": "💓观影┃4K💓",
               "push_agent": "推送"
