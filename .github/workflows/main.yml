@@ -130,12 +130,6 @@ jobs:
               "push_agent": "推送"
           }
 
-          PRIORITY_MAP = {
-              "Douban": 1,
-              "Wexokconfig": 2,
-              "玩偶": 3
-          }
-
           # Emby key 匹配规则：兼容 Wexemby / Emby / Emby001 / Wexdiyemby001 等
           EMBY_KEY_PATTERN = re.compile(r'^(Wex)?(diy)?[Ee]mby\d*$', re.IGNORECASE)
 
@@ -274,9 +268,6 @@ jobs:
                                   new_name += current_date
                           site["name"] = new_name
                       final_sites.append(site)
-
-                  # 按优先级排序
-                  final_sites.sort(key=lambda x: PRIORITY_MAP.get(x.get("key"), 4))
 
                   # 最后添加Wexconfig和push_agent
                   if wexconfig:
