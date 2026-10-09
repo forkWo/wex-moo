@@ -235,17 +235,13 @@ jobs:
                               sites.insert(insert_index, emb)
                   # ===== Emby 处理结束 =====
 
-                  # 单独处理push_agent和Wexconfig（暂存后重新添加，确保位置在最后）
+                  # 单独处理push_agent（暂存后重新添加，确保位置在最后）
                   processed_sites = []
                   push_agent = None
-                  wexconfig = None
                   for site in sites:
                       key = site.get("key")
                       if key == "push_agent":
                           push_agent = site
-                          continue
-                      if key == "Wexconfig":
-                          wexconfig = site
                           continue
                       processed_sites.append(site)
 
@@ -269,10 +265,7 @@ jobs:
                           site["name"] = new_name
                       final_sites.append(site)
 
-                  # 最后添加Wexconfig和push_agent
-                  if wexconfig:
-                      final_sites.append(wexconfig)
-
+                  # 最后添加push_agent
                   if push_agent:
                       if push_agent.get("key") == "push_agent":
                           base_name = NAME_MAPPING.get("push_agent", "推送")
